@@ -1,4 +1,4 @@
-TARGET  = fw
+TARGET  = bluepill
 ARCH    = arm-none-eabi
 CFLAGS  = -W -Wall -O2 -g -nostdlib -nostartfiles -ffreestanding  -mcpu=cortex-m0 -mthumb
 AFLAGS  = --warn --fatal-warnings -mcpu=cortex-m0
@@ -6,10 +6,10 @@ OBJS    = obj/bootstrap.o obj/main.o
 
 all: $(TARGET).bin
 
-$(TARGET).bin: $(TARGET).elf
+$(TARGET).bin: obj/$(TARGET).elf
 	$(ARCH)-objcopy -O binary $< $@
 
-$(TARGET).elf: $(OBJS)
+obj/$(TARGET).elf: $(OBJS)
 	$(ARCH)-ld $^ -T link.ld -o $@
 # $(ARCH)-objdump -D $@ > $(TARGET).lst
 
