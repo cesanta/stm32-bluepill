@@ -11,7 +11,6 @@ $(TARGET).bin: obj/$(TARGET).elf
 
 obj/$(TARGET).elf: $(OBJS)
 	$(ARCH)-ld $^ -T link.ld -o $@
-# $(ARCH)-objdump -D $@ > $(TARGET).lst
 
 obj/%.o: %.c
 	@mkdir -p $(dir $@)
