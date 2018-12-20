@@ -36,14 +36,16 @@ struct uart {
 #define UART4 ((struct uart *) 0x40004c00)
 #define UART5 ((struct uart *) 0x40005000)
 
+#define BIT(x) ((uint32_t) 1 << (x))
+
 #define SET_REG(reg, clear_mask, set_mask) \
   do {                                     \
     reg &= ~(clear_mask);                  \
     reg |= (set_mask);                     \
   } while (0)
 
-#define SET_PIN_MODE(gpio, pin, mode)                                  \
-  do {                                                                 \
-    uint32_t shift = ((pin) -8) * 4;                                   \
-    (gpio)->CRH = ((gpio)->CRH & ~(0xf << shift)) | ((mode) << shift); \
+#define SET_PIN_MODE(gpio, pin, mode)                  \
+  do {                                                 \
+    uint32_t shift = ((pin) -8) * 4;                   \
+    SET_REG((gpio)->CRH, 0xf << shift, mode << shift); \
   } while (0)
