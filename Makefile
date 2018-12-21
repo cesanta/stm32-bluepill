@@ -1,7 +1,8 @@
 TARGET  = bluepill
 ARCH    = arm-none-eabi
-CFLAGS  = -W -Wall -O2 -g -nostdlib -nostartfiles -ffreestanding  -mcpu=cortex-m0 -mthumb
-AFLAGS  = --warn --fatal-warnings -mcpu=cortex-m0
+CFLAGS  = -W -Wall -g -Os -mcpu=cortex-m3 -mthumb -mabi=aapcs -mfloat-abi=soft
+LDFLAGS = -Wl,--gc-sections -march=armv7-m -mabi=aapcs  -nostartfiles -nostdlib -lc -lnosys -lgcc
+AFLAGS  = --warn --fatal-warnings -mcpu=cortex-m3
 OBJS    = obj/bootstrap.o obj/main.o
 
 all: $(TARGET).bin
@@ -10,11 +11,11 @@ $(TARGET).bin: obj/$(TARGET).elf
 	$(ARCH)-objcopy -O binary $< $@
 
 obj/$(TARGET).elf: $(OBJS)
-	$(ARCH)-ld $^ -T link.ld -o $@
+	$(ARCH)-gcc $^ -T link.ld -o $@ $(LDFLAGS)
 
 obj/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(ARCH)-gcc $(CFLAGS) -c $< -o $@
+	$(ARCH)-gcc $(CFLAGS) -c $< -fdata-sections -ffunction-sections -o $@
 
 obj/%.o: %.s
 	@mkdir -p $(dir $@)

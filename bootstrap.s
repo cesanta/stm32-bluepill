@@ -26,6 +26,7 @@
 spin:   b spin
 
 .thumb_func
+.global _reset
 _reset:
     bl main
     b .

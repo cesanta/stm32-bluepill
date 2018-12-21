@@ -3,8 +3,7 @@
 //
 // TRM: https://www.st.com/resource/en/reference_manual/cd00171190.pdf
 
-typedef unsigned int uint32_t;
-typedef unsigned char uint8_t;
+#include <stdint.h>
 
 #define LED_PIN 13  // PC13
 #define TX_PIN 9    // PA9
@@ -49,3 +48,6 @@ struct uart {
     uint32_t shift = ((pin) -8) * 4;                   \
     SET_REG((gpio)->CRH, 0xf << shift, mode << shift); \
   } while (0)
+
+#define UART_HAS_DATA(u) ((u)->SR & BIT(5))  // RXNE
+#define UART_READ(u) ((u)->DR & 255)
