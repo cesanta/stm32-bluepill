@@ -51,3 +51,12 @@ struct uart {
 
 #define UART_HAS_DATA(u) ((u)->SR & BIT(5))  // RXNE
 #define UART_READ(u) ((u)->DR & 255)
+
+#define INIT_MEMORY                                                      \
+  do {                                                                   \
+    extern uint32_t _bss_start, _bss_end;                                \
+    extern uint32_t _data_start, _data_end, _data_flash_start;           \
+    memset(&_bss_start, 0, ((char *) &_bss_end - (char *) &_bss_start)); \
+    memcpy(&_data_start, &_data_flash_start,                             \
+           ((char *) &_data_end - (char *) &_data_start));               \
+  } while (0)

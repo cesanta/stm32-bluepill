@@ -18,20 +18,15 @@ static int uart_write(const char *ptr, int size, void *userdata) {
   return size;
 }
 
-void *_sbrk() {
-  return 0;
-}
+static int blink_period = 50000;
 
-void init_data_section(void) {
-  extern uint32_t _bss_start, _bss_end;
-  extern uint32_t _data_start, _data_end, _data_flash_start;
-  memset(&_bss_start, 0, ((char *) &_bss_end - (char *) &_bss_start));
-  memcpy(&_data_start, &_data_flash_start,
-         ((char *) &_data_end - (char *) &_data_start));
+static void set_cycles(struct jsonrpc_request *r) {
+  blink_period = mjson_get_number(r->params, r->params_len, "$.period", 50000);
+  jsonrpc_return_success(r, NULL);  // Report success
 }
 
 int main(void) {
-  init_data_section();
+  INIT_MEMORY;
 
   RCC->APB2ENR |= BIT(4);                // GPIOC, for LED on PC13
   SET_PIN_MODE(GPIOC, LED_PIN, 0b0110);  // open drain, output 2
@@ -43,15 +38,20 @@ int main(void) {
   UART1->BRR = 0x45;                       // Set baud rate, TRM 27.3.4
   UART1->CR1 = BIT(13) | BIT(2) | BIT(3);  // Enable USART1
 
-  jsonrpc_init(uart_write, NULL, UART1, "1.0");
+  jsonrpc_init(uart_write, NULL, UART1, "1.0");   // Init JSON-RPC client lib
+  jsonrpc_export("SetCycles", set_cycles, NULL);  // Export custom function
 
-  volatile int count = 0, led_on = 0, period = 50000;
+  volatile int count = 0, led_on = 0;
   for (;;) {
     if (UART_HAS_DATA(UART1)) jsonrpc_process_byte(UART_READ(UART1));
-    if (++count < period) continue;
+    if (++count < blink_period) continue;
     count = 0;
     led_on = !led_on;
     GPIOC->BSRR |= BIT(LED_PIN + (led_on ? 0 : 16));
   }
+  return 0;
+}
+
+void *_sbrk() {
   return 0;
 }
