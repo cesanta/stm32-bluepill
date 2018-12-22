@@ -1,12 +1,10 @@
 // Copyright (c) 2018 Cesanta Software Limited
 // All rights reserved
-//
-// Bare metal BluePill controlled by the Cloud Communication Module (CCM)
 
 #include "stm32f1.h"
 
 #define MJSON_IMPLEMENT_STRTOD 1
-#include "../mjson/mjson.h"
+#include "mjson.h"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
   struct uart *uart = userdata;
