@@ -19,6 +19,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#ifndef MJSON_H_
+#define MJSON_H_
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,6 +67,156 @@ typedef void (*mjson_cb_t)(int ev, const char *s, int off, int len, void *ud);
 #define MJSON_MAX_DEPTH 20
 #endif
 
+int mjson(const char *s, int len, mjson_cb_t cb, void *ud);
+
+enum mjson_tok mjson_find(const char *s, int len, const char *jp,
+                          const char **tokptr, int *toklen);
+
+double mjson_get_number(const char *s, int len, const char *path, double def);
+
+int mjson_get_bool(const char *s, int len, const char *path, int dflt);
+
+int mjson_get_string(const char *s, int len, const char *path, char *to, int n);
+
+#if MJSON_ENABLE_BASE64
+int mjson_get_base64(const char *s, int len, const char *path, char *to, int n);
+#endif
+
+#if MJSON_ENABLE_PRINT
+
+struct mjson_out {
+  int (*print)(struct mjson_out *, const char *buf, int len);
+  union {
+    struct {
+      char *ptr;
+      int size, len, overflow;
+    } fixed_buf;
+    char **dynamic_buf;
+    FILE *fp;
+  } u;
+};
+
+#define MJSON_OUT_FIXED_BUF(buf, buflen) \
+  {                                      \
+    mjson_print_fixed_buf, {             \
+      { (buf), (buflen), 0, 0 }          \
+    }                                    \
+  }
+
+#define MJSON_OUT_DYNAMIC_BUF(buf) \
+  {                                \
+    mjson_print_dynamic_buf, {     \
+      { (char *) (buf), 0, 0, 0 }  \
+    }                              \
+  }
+
+#define MJSON_OUT_FILE(fp)       \
+  {                              \
+    mjson_print_file, {          \
+      { (char *) (fp), 0, 0, 0 } \
+    }                            \
+  }
+
+int mjson_printf(struct mjson_out *out, const char *fmt, ...);
+
+int mjson_vprintf(struct mjson_out *out, const char *fmt, va_list ap);
+
+int mjson_print_str(struct mjson_out *out, const char *s, int len);
+
+int mjson_print_int(struct mjson_out *out, int value, int is_signed);
+
+int mjson_print_long(struct mjson_out *out, long value, int is_signed);
+
+int mjson_print_file(struct mjson_out *out, const char *ptr, int len);
+
+int mjson_print_fixed_buf(struct mjson_out *out, const char *ptr, int len);
+
+int mjson_print_dynamic_buf(struct mjson_out *out, const char *ptr, int len);
+
+#endif  /* MJSON_ENABLE_PRINT */
+
+#if MJSON_ENABLE_RPC
+
+void jsonrpc_init(int (*sender)(const char *, int, void *),
+                  void (*response_cb)(const char *, int, void *),
+                  void *userdata, const char *version);
+
+
+struct jsonrpc_request {
+  const char *params;     // Points to the "params" in the request frame
+  int params_len;         // Length of the "params"
+  const char *id;         // Points to the "id" in the request frame
+  int id_len;             // Length of the "id"
+  struct mjson_out *out;  // Output stream
+  void *userdata;         // Callback's user data as specified at export time
+};
+
+struct jsonrpc_method {
+  const char *method;
+  int method_sz;
+  void (*cb)(struct jsonrpc_request *);
+  void *cbdata;
+  struct jsonrpc_method *next;
+};
+
+/*
+ * Main RPC context, stores current request information and a list of
+ * exported RPC methods.
+ */
+struct jsonrpc_ctx {
+  struct jsonrpc_method *methods;
+  void *userdata;
+  int (*sender)(const char *buf, int len, void *userdata);
+  void (*response_cb)(const char *buf, int len, void *userdata);
+  int in_len;
+  char in[MJSON_RPC_IN_BUF_SIZE];
+};
+
+/* Registers function fn under the given name within the given RPC context */
+#define jsonrpc_ctx_export(ctx, name, fn, ud)                                \
+  do {                                                                       \
+    static struct jsonrpc_method m = {(name), sizeof(name) - 1, (fn), 0, 0}; \
+    m.cbdata = (ud);                                                         \
+    m.next = (ctx)->methods;                                                 \
+    (ctx)->methods = &m;                                                     \
+  } while (0)
+
+void jsonrpc_ctx_init(struct jsonrpc_ctx *ctx,
+                      int (*send_cb)(const char *, int, void *),
+                      void (*response_cb)(const char *, int, void *),
+                      void *userdata, const char *version);
+
+int jsonrpc_ctx_call(struct jsonrpc_ctx *ctx, const char *fmt, ...);
+
+void jsonrpc_return_error(struct jsonrpc_request *r, int code,
+                          const char *message_fmt, ...);
+
+void jsonrpc_return_success(struct jsonrpc_request *r, const char *result_fmt, ...);
+
+void jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, char *req, int req_sz);
+
+void jsonrpc_ctx_process_byte(struct jsonrpc_ctx *ctx, unsigned char ch);
+
+extern struct jsonrpc_ctx jsonrpc_default_context;
+
+#define jsonrpc_export(name, fn, ud) \
+  jsonrpc_ctx_export(&jsonrpc_default_context, (name), (fn), (ud))
+
+#if !defined(_MSC_VER) || _MSC_VER >= 1700
+#define jsonrpc_call(fmt, ...) \
+  jsonrpc_ctx_call(&jsonrpc_default_context, fmt, __VA_ARGS__)
+#endif
+
+#define jsonrpc_process(buf, len) \
+  jsonrpc_ctx_process(&jsonrpc_default_context, (buf), (len))
+
+#define jsonrpc_process_byte(x) \
+  jsonrpc_ctx_process_byte(&jsonrpc_default_context, (x))
+
+#endif /* MJSON_ENABLE_RPC */
+
+#endif /* MJSON_H_ */
+
 #if !defined(_MSC_VER) || _MSC_VER >= 1700
 #else
 #define va_copy(x, y) (x) = (y)
@@ -92,7 +245,7 @@ static int mjson_pass_string(const char *s, int len) {
   return MJSON_ERROR_INVALID_INPUT;
 }
 
-static int mjson(const char *s, int len, mjson_cb_t cb, void *ud) {
+int mjson(const char *s, int len, mjson_cb_t cb, void *ud) {
   enum { S_VALUE, S_KEY, S_COLON, S_COMMA_OR_EOO } expecting = S_VALUE;
   unsigned char nesting[MJSON_MAX_DEPTH];
   int i, depth = 0;
@@ -368,40 +521,6 @@ int mjson_get_base64(const char *s, int len, const char *path, char *to,
 #endif  // MJSON_ENABLE_BASE64
 
 #if MJSON_ENABLE_PRINT
-
-struct mjson_out {
-  int (*print)(struct mjson_out *, const char *buf, int len);
-  union {
-    struct {
-      char *ptr;
-      int size, len, overflow;
-    } fixed_buf;
-    char **dynamic_buf;
-    FILE *fp;
-  } u;
-};
-
-#define MJSON_OUT_FIXED_BUF(buf, buflen) \
-  {                                      \
-    mjson_print_fixed_buf, {             \
-      { (buf), (buflen), 0, 0 }          \
-    }                                    \
-  }
-
-#define MJSON_OUT_DYNAMIC_BUF(buf) \
-  {                                \
-    mjson_print_dynamic_buf, {     \
-      { (char *) (buf), 0, 0, 0 }  \
-    }                              \
-  }
-
-#define MJSON_OUT_FILE(fp)       \
-  {                              \
-    mjson_print_file, {          \
-      { (char *) (fp), 0, 0, 0 } \
-    }                            \
-  }
-
 int mjson_print_fixed_buf(struct mjson_out *out, const char *ptr, int len) {
   int i, left = out->u.fixed_buf.size - out->u.fixed_buf.len;
   if (left < len) {
@@ -436,9 +555,17 @@ int mjson_print_buf(struct mjson_out *out, const char *buf, int len) {
   return out->print(out, buf, len);
 }
 
-int mjson_print_int(struct mjson_out *out, int value) {
-  char buf[40];
-  int len = snprintf(buf, sizeof(buf), "%d", value);
+int mjson_print_int(struct mjson_out *out, int value, int is_signed) {
+  char buf[20];
+  const char *fmt = (is_signed ? "%d" : "%u");
+  int len = snprintf(buf, sizeof(buf), fmt, value);
+  return out->print(out, buf, len);
+}
+
+int mjson_print_long(struct mjson_out *out, long value, int is_signed) {
+  char buf[20];
+  const char *fmt = (is_signed ? "%ld" : "%lu");
+  int len = snprintf(buf, sizeof(buf), fmt, value);
   return out->print(out, buf, len);
 }
 
@@ -476,47 +603,60 @@ int mjson_print_b64(struct mjson_out *out, const unsigned char *s, int n) {
   }
   return len + out->print(out, "\"", 1);
 }
-#endif
+#endif /* MJSON_ENABLE_BASE64 */
 
 typedef int (*mjson_printf_fn_t)(struct mjson_out *, va_list *);
 
 int mjson_vprintf(struct mjson_out *out, const char *fmt, va_list ap) {
-  int i, n = 0;
-  for (i = 0; fmt[i] != '\0'; i++) {
+  int i = 0, n = 0;
+  while (fmt[i] != '\0') {
     if (fmt[i] == '%') {
-      if (fmt[i + 1] == 'Q') {
+      char fc = fmt[++i];
+      int is_long = 0;
+      if (fc == 'l') {
+        is_long = 1;
+        fc = fmt[i + 1];
+      }
+      if (fc == 'Q') {
         char *buf = va_arg(ap, char *);
         n += mjson_print_str(out, buf, strlen(buf));
-      } else if (memcmp(&fmt[i + 1], ".*Q", 3) == 0) {
+      } else if (memcmp(&fmt[i], ".*Q", 3) == 0) {
         int len = va_arg(ap, int);
         char *buf = va_arg(ap, char *);
         n += mjson_print_str(out, buf, len);
         i += 2;
-      } else if (fmt[i + 1] == 'd') {
-        int val = va_arg(ap, int);
-        n += mjson_print_int(out, val);
-      } else if (fmt[i + 1] == 'B') {
+      } else if (fc == 'd' || fc == 'u') {
+        int is_signed = (fc == 'd');
+        if (is_long) {
+          long val = va_arg(ap, long);
+          n += mjson_print_long(out, val, is_signed);
+          i++;
+        } else {
+          int val = va_arg(ap, int);
+          n += mjson_print_int(out, val, is_signed);
+        }
+      } else if (fc == 'B') {
         const char *s = va_arg(ap, int) ? "true" : "false";
         n += mjson_print_buf(out, s, strlen(s));
-      } else if (fmt[i + 1] == 's') {
+      } else if (fc == 's') {
         char *buf = va_arg(ap, char *);
         n += mjson_print_buf(out, buf, strlen(buf));
-      } else if (memcmp(&fmt[i + 1], ".*s", 3) == 0) {
+      } else if (memcmp(&fmt[i], ".*s", 3) == 0) {
         int len = va_arg(ap, int);
         char *buf = va_arg(ap, char *);
         n += mjson_print_buf(out, buf, len);
         i += 2;
-      } else if (fmt[i + 1] == 'g') {
+      } else if (fc == 'g') {
         n += mjson_print_dbl(out, va_arg(ap, double), "%g");
-      } else if (fmt[i + 1] == 'f') {
+      } else if (fc == 'f') {
         n += mjson_print_dbl(out, va_arg(ap, double), "%f");
 #if MJSON_ENABLE_BASE64
-      } else if (fmt[i + 1] == 'V') {
+      } else if (fc == 'V') {
         int len = va_arg(ap, int);
         const char *buf = va_arg(ap, const char *);
         n += mjson_print_b64(out, (unsigned char *) buf, len);
 #endif
-      } else if (fmt[i + 1] == 'M') {
+      } else if (fc == 'M') {
         va_list tmp;
         mjson_printf_fn_t fn;
         va_copy(tmp, ap);
@@ -525,7 +665,7 @@ int mjson_vprintf(struct mjson_out *out, const char *fmt, va_list ap) {
       }
       i++;
     } else {
-      n += mjson_print_buf(out, &fmt[i], 1);
+      n += mjson_print_buf(out, &fmt[i++], 1);
     }
   }
   return n;
@@ -539,7 +679,7 @@ int mjson_printf(struct mjson_out *out, const char *fmt, ...) {
   va_end(ap);
   return len;
 }
-#endif
+#endif  /* MJSON_ENABLE_PRINT */
 
 #if MJSON_IMPLEMENT_STRTOD
 static int is_digit(int c) {
@@ -647,67 +787,7 @@ done:
 #define JSONRPC_ERROR_BAD_PARAMS -32602 /* Invalid params passed */
 #define JSONRPC_ERROR_INTERNAL -32603   /* Internal JSON-RPC error */
 
-struct jsonrpc_request {
-  const char *params;     // Points to the "params" in the request frame
-  int params_len;         // Length of the "params"
-  const char *id;         // Points to the "id" in the request frame
-  int id_len;             // Length of the "id"
-  struct mjson_out *out;  // Output stream
-  void *userdata;         // Callback's user data as specified at export time
-};
-
-struct jsonrpc_method {
-  const char *method;
-  int method_sz;
-  void (*cb)(struct jsonrpc_request *);
-  void *cbdata;
-  struct jsonrpc_method *next;
-};
-
-/*
- * Main RPC context, stores current request information and a list of
- * exported RPC methods.
- */
-struct jsonrpc_ctx {
-  struct jsonrpc_method *methods;
-  void *userdata;
-  int (*sender)(const char *buf, int len, void *userdata);
-  void (*response_cb)(const char *buf, int len, void *userdata);
-  int in_len;
-  char in[MJSON_RPC_IN_BUF_SIZE];
-};
-
-#define JSONRPC_CTX_INTIALIZER   \
-  {                              \
-    NULL, NULL, NULL, NULL, 0, { \
-      0                          \
-    }                            \
-  }
-
-/* Registers function fn under the given name within the given RPC context */
-#define jsonrpc_ctx_export(ctx, name, fn, ud)                                \
-  do {                                                                       \
-    static struct jsonrpc_method m = {(name), sizeof(name) - 1, (fn), 0, 0}; \
-    m.cbdata = (ud);                                                         \
-    m.next = (ctx)->methods;                                                 \
-    (ctx)->methods = &m;                                                     \
-  } while (0)
-
-static struct jsonrpc_ctx jsonrpc_default_context = JSONRPC_CTX_INTIALIZER;
-
-#define jsonrpc_export(name, fn, ud) \
-  jsonrpc_ctx_export(&jsonrpc_default_context, (name), (fn), (ud))
-
-#if !defined(_MSC_VER) || _MSC_VER >= 1700
-#define jsonrpc_call(fmt, ...) \
-  jsonrpc_ctx_call(&jsonrpc_default_context, fmt, __VA_ARGS__)
-#endif
-
-#define jsonrpc_process(buf, len) \
-  jsonrpc_ctx_process(&jsonrpc_default_context, (buf), (len))
-
-#define jsonrpc_process_byte(x) \
-  jsonrpc_ctx_process_byte(&jsonrpc_default_context, (x))
+struct jsonrpc_ctx jsonrpc_default_context;
 
 static int jsonrpc_printer(struct mjson_out *out, const char *buf, int len) {
   struct jsonrpc_ctx *ctx = (struct jsonrpc_ctx *) out->u.fixed_buf.ptr;

@@ -4,7 +4,7 @@
 #include "stm32f1.h"
 
 #define MJSON_IMPLEMENT_STRTOD 1
-#include "mjson.h"
+#include "mjson.c"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
   struct uart *uart = userdata;
