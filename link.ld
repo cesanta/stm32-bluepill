@@ -9,7 +9,7 @@ SECTIONS {
 
   .bss : {
     _bss_start = .;
-    *(.bss SORT(.bss.*))
+    *(.bss SORT(.bss.*) COMMON)
     _bss_end = .;
   } > ram
 
