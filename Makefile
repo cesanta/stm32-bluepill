@@ -5,13 +5,16 @@ LDFLAGS = -Wl,--gc-sections -march=armv7-m -mabi=aapcs  -nostartfiles -nostdlib 
 AFLAGS  = --warn --fatal-warnings -mcpu=cortex-m3
 OBJS    = obj/bootstrap.o obj/main.o
 
-all: $(TARGET).bin
+all: $(TARGET).hex
 
 $(TARGET).bin: obj/$(TARGET).elf
 	$(ARCH)-objcopy -O binary $< $@
 
+$(TARGET).hex: $(TARGET).bin
+	$(ARCH)-objcopy -I binary -O ihex --change-address 0x8000000 $< $@
+
 obj/$(TARGET).elf: $(OBJS)
-	$(ARCH)-gcc $^ -T link.ld -o $@ $(LDFLAGS)
+	$(ARCH)-gcc $^ $(LDFLAGS) -T link.ld -o $@ -Wl,-Map=$@.map
 
 obj/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -21,8 +24,8 @@ obj/%.o: %.s
 	@mkdir -p $(dir $@)
 	$(ARCH)-as $(AFLAGS) $< -o $@
 
-zip: $(TARGET).bin
-	mos create-fw-bundle -o $(TARGET).zip --name $(TARGET) --platform ccm_host host_fw:type=STM32,src=$(TARGET).bin,addr=0x8000000
+zip: $(TARGET).hex
+	mos create-fw-bundle -o $(TARGET).zip --name $(TARGET) --platform ccm_host host_fw:src=$(TARGET).hex
 
 COM_PORT ?= /dev/cu.SLAB_USBtoUART
 flash: $(TARGET).bin
