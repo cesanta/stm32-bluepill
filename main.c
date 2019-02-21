@@ -3,7 +3,8 @@
 
 #include "stm32f1.h"
 
-#define MJSON_IMPLEMENT_STRTOD 1
+#define JSONRPC_ARCH "stm32f103"
+#define JSONRPC_APP "bluepill-demo"
 #include "mjson.c"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
@@ -16,7 +17,7 @@ static int uart_write(const char *ptr, int size, void *userdata) {
   return size;
 }
 
-static int blink_period = 50000;
+static int blink_period = 150000;
 
 static void set_cycles(struct jsonrpc_request *r) {
   blink_period = mjson_get_number(r->params, r->params_len, "$.period", 50000);
