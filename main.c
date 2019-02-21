@@ -3,8 +3,8 @@
 
 #include "stm32f1.h"
 
-#define JSONRPC_ARCH "stm32f103"
-#define JSONRPC_APP "bluepill-demo"
+#define JSONRPC_ARCH "stm32"
+#define JSONRPC_APP "f103-bluepill"
 #include "mjson.c"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
