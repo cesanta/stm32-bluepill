@@ -7,7 +7,8 @@ instance over the UART. With this setup, this board can be wired to the
 gives the following functionality:
 
 - Allows to call BluePill's functions over the network
-- Allows BluePill to call Cloud Connector's functions like MQTT, Filesystem
+- Allows BluePill to call Cloud Connector's functions like
+  MQTT publish/subcribe, create/edit/delete/download files, etc
 - Allows to remotely flash the BluePill board
 
 Basically, a Cloud Connector grants remote control capabilities without
