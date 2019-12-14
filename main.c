@@ -1,11 +1,8 @@
-// Copyright (c) 2018 Cesanta Software Limited
+// Copyright (c) 2018,2019,2020 Cesanta Software Limited
 // All rights reserved
 
 #include "stm32f1.h"
-
-#define JSONRPC_ARCH "stm32"
-#define JSONRPC_APP "f103-bluepill"
-#include "mjson.c"
+#include "mjson.h"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
   struct uart *uart = userdata;
@@ -20,8 +17,13 @@ static int uart_write(const char *ptr, int size, void *userdata) {
 static int blink_period = 150000;
 
 static void set_cycles(struct jsonrpc_request *r) {
-  blink_period = mjson_get_number(r->params, r->params_len, "$.period", 50000);
-  jsonrpc_return_success(r, NULL);  // Report success
+  double dv;
+  if (mjson_get_number(r->params, r->params_len, "$.period", &dv)) {
+    blink_period = dv;
+    jsonrpc_return_success(r, NULL);  // Report success
+  }  else {
+    jsonrpc_return_error(r, JSONRPC_ERROR_BAD_PARAMS, "Expect period");
+  }
 }
 
 int main(void) {
@@ -37,12 +39,14 @@ int main(void) {
   UART1->BRR = 0x45;                       // Set baud rate, TRM 27.3.4
   UART1->CR1 = BIT(13) | BIT(2) | BIT(3);  // Enable USART1
 
-  jsonrpc_init(uart_write, NULL, UART1, "1.0");   // Init JSON-RPC client lib
+  jsonrpc_init(NULL, NULL);                       // Init JSON-RPC lib
   jsonrpc_export("SetCycles", set_cycles, NULL);  // Export custom function
 
   volatile int count = 0, led_on = 0;
   for (;;) {
-    if (UART_HAS_DATA(UART1)) jsonrpc_process_byte(UART_READ(UART1));
+    if (UART_HAS_DATA(UART1)) {
+      jsonrpc_process_byte(UART_READ(UART1), uart_write, UART1);
+    }
     if (++count < blink_period) continue;
     count = 0;
     led_on = !led_on;
