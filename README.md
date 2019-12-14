@@ -1,18 +1,20 @@
-# STM32 BluePill controlled by the CCM
+# STM32 BluePill controlled by Cloud Connector
 
-## Bluepill with CCM: remote OTA and RESTful service
+This is a baremetal firmware code for a STM32F103C8T6 "BluePill"
+development board. This firmware blinks an LED, and runs a JSON-RPC
+instance over the UART. With this setup, this board can be wired to the
+[ESP32 Cloud Connector](https://mdash.net/docs/quickstart/ccm.md), which
+gives the following functionality:
 
-- Connect Bluepill to CCM: 3.3V-3.3v, GND-GND, PA9-IO25, PA10-IO26, BOOT0-IO27, RST-IO14
-- Connect CCM to your workstation over the USB
-- Login to https://dash.mongoose-os.com, create new device
-- `mos flash ccm`, `mos wifi NET PASS`
+- Allows to call BluePill's functions over the network
+- Allows BluePill to call Cloud Connector's functions like MQTT, Filesystem
+- Allows to remotely flash the BluePill board
 
-## Stand-alone: Bluepill is a JSON-RPC server over UART
+Basically, a Cloud Connector grants remote control capabilities without
+writing a single line of networking code, and grants Over-the-Air firmware
+update without writing a single line of code.
 
-- Run `make`
-- Connect using a 3.3V USB-to-Serial adapter: A9 to RXT, A10 to TXD, GND to GND, 3.3 to 3V3
-- Set BOOT0 jumper to 1 then press RESET
-- Run `make flash`
-- Reset BOOT0 jumper to 0 then RESET again
+Follow
+[ESP32 Cloud Connector BluePill Guide](https://mdash.net/docs/quickstart/ccm.md#example-ota-for-stm32f103c8t6-bluepill)
+for detailed instrustions.
 
-See https://mongoose-os.com/docs/ccm/stm32-rest-api.md
