@@ -22,7 +22,7 @@ static void set_cycles(struct jsonrpc_request *r) {
     blink_period = dv;
     jsonrpc_return_success(r, NULL);  // Report success
   }  else {
-    jsonrpc_return_error(r, JSONRPC_ERROR_BAD_PARAMS, "Expect period");
+    jsonrpc_return_error(r, JSONRPC_ERROR_BAD_PARAMS, "Expect period", NULL);
   }
 }
 
