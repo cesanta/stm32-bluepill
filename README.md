@@ -1,4 +1,4 @@
-# STM32 BluePill controlled by Cloud Connector
+# STM32 BluePill controlled by https://vcon.io
 
 This is a baremetal firmware code for a STM32F103C8T6 "BluePill"
 development board. This firmware blinks an LED, and runs a JSON-RPC

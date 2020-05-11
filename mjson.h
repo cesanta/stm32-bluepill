@@ -39,12 +39,33 @@
 #define MJSON_ENABLE_BASE64 1
 #endif
 
+#ifndef MJSON_ENABLE_MERGE
+#define MJSON_ENABLE_MERGE 0
+#elif MJSON_ENABLE_MERGE
+#define MJSON_ENABLE_NEXT 1
+#endif
+
+#ifndef MJSON_ENABLE_PRETTY
+#define MJSON_ENABLE_PRETTY 0
+#elif MJSON_ENABLE_PRETTY
+#define MJSON_ENABLE_NEXT 1
+#endif
+
+#ifndef MJSON_ENABLE_NEXT
+#define MJSON_ENABLE_NEXT 0
+#endif
+
+
 #ifndef MJSON_RPC_IN_BUF_SIZE
 #define MJSON_RPC_IN_BUF_SIZE 256
 #endif
 
 #ifndef ATTR
 #define ATTR
+#endif
+
+#ifndef MJSON_RPC_LIST_NAME
+#define MJSON_RPC_LIST_NAME "rpc.list"
 #endif
 
 enum {
@@ -65,7 +86,7 @@ enum mjson_tok {
 };
 #define MJSON_TOK_IS_VALUE(t) ((t) > 10 && (t) < 20)
 
-typedef void (*mjson_cb_t)(int ev, const char *s, int off, int len, void *ud);
+typedef int (*mjson_cb_t)(int ev, const char *s, int off, int len, void *ud);
 
 #ifndef MJSON_MAX_DEPTH
 #define MJSON_MAX_DEPTH 20
@@ -77,9 +98,16 @@ enum mjson_tok mjson_find(const char *s, int len, const char *jp,
 int mjson_get_number(const char *s, int len, const char *path, double *v);
 int mjson_get_bool(const char *s, int len, const char *path, int *v);
 int mjson_get_string(const char *s, int len, const char *path, char *to, int n);
+int mjson_get_hex(const char *s, int len, const char *path, char *to, int n);
+
+#if MJSON_ENABLE_NEXT
+int mjson_next(const char *s, int n, int off, int *koff, int *klen, int *voff,
+               int *vlen, int *vtype);
+#endif
 
 #if MJSON_ENABLE_BASE64
 int mjson_get_base64(const char *s, int len, const char *path, char *to, int n);
+int mjson_base64_dec(const char *src, int n, char *dst, int dlen);
 #endif
 
 #if MJSON_ENABLE_PRINT
@@ -101,6 +129,14 @@ int mjson_print_file(const char *ptr, int len, void *userdata);
 int mjson_print_fixed_buf(const char *ptr, int len, void *userdata);
 int mjson_print_dynamic_buf(const char *ptr, int len, void *userdata);
 
+#if MJSON_ENABLE_PRETTY
+int mjson_pretty(const char *, int, const char *, mjson_print_fn_t, void *);
+#endif
+
+#if MJSON_ENABLE_MERGE
+int mjson_merge(const char *, int, const char *, int, mjson_print_fn_t, void *);
+#endif
+
 #endif  // MJSON_ENABLE_PRINT
 
 #if MJSON_ENABLE_RPC
@@ -113,6 +149,8 @@ struct jsonrpc_request {
   int params_len;       // Length of the "params"
   const char *id;       // Points to the "id" in the request frame
   int id_len;           // Length of the "id"
+  const char *method;   // Points to the "method" in the request frame
+  int method_len;       // Length of the "method"
   mjson_print_fn_t fn;  // Printer function
   void *fndata;         // Printer function data
   void *userdata;       // Callback's user data as specified at export time
@@ -148,12 +186,11 @@ struct jsonrpc_ctx {
 void jsonrpc_ctx_init(struct jsonrpc_ctx *ctx,
                       void (*response_cb)(const char *, int, void *),
                       void *userdata);
-int jsonrpc_call(mjson_print_fn_t fn, void *fndata, const char *fmt, ...);
 void jsonrpc_return_error(struct jsonrpc_request *r, int code,
                           const char *message, const char *data_fmt, ...);
 void jsonrpc_return_success(struct jsonrpc_request *r, const char *result_fmt,
                             ...);
-void jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, char *req, int req_sz,
+void jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, const char *req, int req_sz,
                          mjson_print_fn_t fn, void *fndata);
 void jsonrpc_ctx_process_byte(struct jsonrpc_ctx *ctx, unsigned char ch,
                               mjson_print_fn_t fn, void *fndata);
@@ -183,6 +220,7 @@ extern struct jsonrpc_ctx jsonrpc_default_context;
 #else
 #define va_copy(x, y) (x) = (y)
 #define snprintf _snprintf
+#define alloca _alloca
 #endif
 
 static int mjson_esc(int c, int esc) {
@@ -212,7 +250,7 @@ int ATTR mjson(const char *s, int len, mjson_cb_t cb, void *ud) {
   unsigned char nesting[MJSON_MAX_DEPTH];
   int i, depth = 0;
 #define MJSONCALL(ev) \
-  if (cb) cb(ev, s, start, i - start + 1, ud)
+  if (cb != NULL && cb(ev, s, start, i - start + 1, ud)) return i + 1;
 
 // In the ascii table, the distance between `[` and `]` is 2.
 // Ditto for `{` and `}`. Hence +2 in the code below.
@@ -332,13 +370,13 @@ static int mjson_plen(const char *s) {
   return i;
 }
 
-static void ATTR mjson_get_cb(int tok, const char *s, int off, int len,
-                              void *ud) {
+static int ATTR mjson_get_cb(int tok, const char *s, int off, int len,
+                             void *ud) {
   struct msjon_get_data *data = (struct msjon_get_data *) ud;
   // printf("--> %2x %2d %2d %2d %2d\t'%s'\t'%.*s'\t\t'%.*s'\n", tok, data->d1,
-  //        data->d2, data->i1, data->i2, data->path + data->pos, off, s, len,
-  //        s + off);
-  if (data->tok != MJSON_TOK_INVALID) return;  // Found
+  // data->d2, data->i1, data->i2, data->path + data->pos, off, s, len,
+  // s + off);
+  if (data->tok != MJSON_TOK_INVALID) return 1;  // Found
 
   if (tok == '{') {
     if (!data->path[data->pos] && data->d1 == data->d2) data->obj = off;
@@ -370,12 +408,16 @@ static void ATTR mjson_get_cb(int tok, const char *s, int off, int len,
              !memcmp(s + off + 1, &data->path[data->pos + 1], len - 2)) {
     data->d2++;
     data->pos += len - 1;
+  } else if (tok == MJSON_TOK_KEY && data->d1 == data->d2) {
+    return 1;  // Exhausted path, not found
   } else if (tok == '}' || tok == ']') {
     data->d1--;
+    // data->d2--;
     if (!data->path[data->pos] && data->d1 == data->d2 && data->obj != -1) {
       data->tok = tok - 2;
       if (data->tokptr) *data->tokptr = s + data->obj;
       if (data->toklen) *data->toklen = off - data->obj + 1;
+      return 1;
     }
   } else if (MJSON_TOK_IS_VALUE(tok)) {
     // printf("TOK --> %d\n", tok);
@@ -383,8 +425,10 @@ static void ATTR mjson_get_cb(int tok, const char *s, int off, int len,
       data->tok = tok;
       if (data->tokptr) *data->tokptr = s + off;
       if (data->toklen) *data->toklen = len;
+      return 1;
     }
   }
+  return 0;
 }
 
 enum mjson_tok ATTR mjson_find(const char *s, int len, const char *jp,
@@ -437,6 +481,20 @@ int ATTR mjson_get_string(const char *s, int len, const char *path, char *to,
   return mjson_unescape(p + 1, sz - 2, to, n);
 }
 
+int ATTR mjson_get_hex(const char *s, int len, const char *x, char *to, int n) {
+  const char *p;
+  int i, j, sz;
+  if (mjson_find(s, len, x, &p, &sz) != MJSON_TOK_STRING) return -1;
+  for (i = j = 0; i < sz - 3 && j < n; i += 2, j++) {
+#define HEXTOI(x) (x >= '0' && x <= '9' ? x - '0' : x - 'W')
+    unsigned char a = *(const unsigned char *) (p + i + 1);
+    unsigned char b = *(const unsigned char *) (p + i + 2);
+    ((unsigned char *) to)[j] = (HEXTOI(a) << 4) | HEXTOI(b);
+  }
+  if (j < n) to[j] = '\0';
+  return j;
+}
+
 #if MJSON_ENABLE_BASE64
 static int ATTR mjson_base64rev(int c) {
   if (c >= 'A' && c <= 'Z') {
@@ -454,7 +512,7 @@ static int ATTR mjson_base64rev(int c) {
   }
 }
 
-static int ATTR mjson_base64_dec(const char *src, int n, char *dst, int dlen) {
+int ATTR mjson_base64_dec(const char *src, int n, char *dst, int dlen) {
   const char *end = src + n;
   int len = 0;
   while (src + 3 < end && len < dlen) {
@@ -482,13 +540,87 @@ int ATTR mjson_get_base64(const char *s, int len, const char *path, char *to,
 }
 #endif  // MJSON_ENABLE_BASE64
 
+#if MJSON_ENABLE_NEXT
+struct nextdata {
+  int off, len, depth, t, vo, arrayindex;
+  int *koff, *klen, *voff, *vlen, *vtype;
+};
+
+static int ATTR next_cb(int tok, const char *s, int off, int len, void *ud) {
+  struct nextdata *d = (struct nextdata *) ud;
+  // int i;
+  switch (tok) {
+    case '{':
+    case '[':
+      if (d->depth == 0 && tok == '[') d->arrayindex = 0;
+      if (d->depth == 1 && off > d->off) {
+        d->vo = off;
+        d->t = tok == '{' ? MJSON_TOK_OBJECT : MJSON_TOK_ARRAY;
+        if (d->voff) *d->voff = off;
+        if (d->vtype) *d->vtype = d->t;
+      }
+      d->depth++;
+      break;
+    case '}':
+    case ']':
+      d->depth--;
+      if (d->depth == 1 && d->vo) {
+        d->len = off + len;
+        if (d->vlen) *d->vlen = d->len - d->vo;
+        if (d->arrayindex >= 0) {
+          if (d->koff) *d->koff = d->arrayindex;  // koff holds array index
+          if (d->klen) *d->klen = 0;              // klen holds 0
+        }
+        return 1;
+      }
+      if (d->depth == 1 && d->arrayindex >= 0) d->arrayindex++;
+      break;
+    case ',':
+    case ':':
+      break;
+    case MJSON_TOK_KEY:
+      if (d->depth == 1 && d->off < off) {
+        if (d->koff) *d->koff = off;  // And report back to the user
+        if (d->klen) *d->klen = len;  // If we have to
+      }
+      break;
+    default:
+      if (d->depth != 1) break;
+      // If we're iterating over the array
+      if (off > d->off) {
+        d->len = off + len;
+        if (d->vlen) *d->vlen = len;    // value length
+        if (d->voff) *d->voff = off;    // value offset
+        if (d->vtype) *d->vtype = tok;  // value type
+        if (d->arrayindex >= 0) {
+          if (d->koff) *d->koff = d->arrayindex;  // koff holds array index
+          if (d->klen) *d->klen = 0;              // klen holds 0
+        }
+        return 1;
+      }
+      if (d->arrayindex >= 0) d->arrayindex++;
+      break;
+  }
+  (void) s;
+  return 0;
+}
+
+int ATTR mjson_next(const char *s, int n, int off, int *koff, int *klen,
+                    int *voff, int *vlen, int *vtype) {
+  struct nextdata d = {off, 0, 0, 0, 0, -1, koff, klen, voff, vlen, vtype};
+  mjson(s, n, next_cb, &d);
+  return d.len;
+}
+#endif
+
 #if MJSON_ENABLE_PRINT
 int ATTR mjson_print_fixed_buf(const char *ptr, int len, void *fndata) {
   struct mjson_fixedbuf *fb = (struct mjson_fixedbuf *) fndata;
-  int i, left = fb->size - fb->len;
+  int i, left = fb->size - 1 - fb->len;
   if (left < len) len = left;
   for (i = 0; i < len; i++) fb->ptr[fb->len + i] = ptr[i];
   fb->len += len;
+  fb->ptr[fb->len] = '\0';
   return len;
 }
 
@@ -640,6 +772,7 @@ int ATTR mjson_vprintf(mjson_print_fn_t fn, void *fndata, const char *fmt,
     }
   }
   va_end(xap);
+  va_end(ap);
   return n;
 }
 
@@ -752,6 +885,134 @@ done:
 }
 #endif
 
+#if MJSON_ENABLE_MERGE
+int ATTR mjson_merge(const char *s, int n, const char *s2, int n2,
+                     mjson_print_fn_t fn, void *userdata) {
+  int koff, klen, voff, vlen, t, t2, k, off = 0, len = 0, comma = 0;
+  if (n < 2) return len;
+  len += fn("{", 1, userdata);
+  while ((off = mjson_next(s, n, off, &koff, &klen, &voff, &vlen, &t)) != 0) {
+#if !defined(_MSC_VER) || _MSC_VER >= 1700
+    char path[klen + 1];
+#else
+    char *path = (char *) alloca(klen + 1);
+#endif
+    const char *val;
+    memcpy(path, "$.", 2);
+    memcpy(path + 2, s + koff + 1, klen - 2);
+    path[klen] = '\0';
+    if ((t2 = mjson_find(s2, n2, path, &val, &k)) != MJSON_TOK_INVALID) {
+      if (t2 == MJSON_TOK_NULL) continue;  // null deletes the key
+    } else {
+      val = s + voff;  // Key is not found in the update. Copy the old value.
+    }
+    if (comma) len += fn(",", 1, userdata);
+    len += fn(s + koff, klen, userdata);
+    len += fn(":", 1, userdata);
+    if (t == MJSON_TOK_OBJECT && t2 == MJSON_TOK_OBJECT) {
+      len += mjson_merge(s + voff, vlen, val, k, fn, userdata);
+    } else {
+      if (t2 != MJSON_TOK_INVALID) vlen = k;
+      len += fn(val, vlen, userdata);
+    }
+    comma = 1;
+  }
+  // Add missing keys
+  off = 0;
+  while ((off = mjson_next(s2, n2, off, &koff, &klen, &voff, &vlen, &t)) != 0) {
+#if !defined(_MSC_VER) || _MSC_VER >= 1700
+    char path[klen + 1];
+#else
+    char *path = (char *) alloca(klen + 1);
+#endif
+    const char *val;
+    if (t == MJSON_TOK_NULL) continue;
+    memcpy(path, "$.", 2);
+    memcpy(path + 2, s2 + koff + 1, klen - 2);
+    path[klen] = '\0';
+    if (mjson_find(s, n, path, &val, &vlen) != MJSON_TOK_INVALID) continue;
+    if (comma) len += fn(",", 1, userdata);
+    len += fn(s2 + koff, klen, userdata);
+    len += fn(":", 1, userdata);
+    len += fn(s2 + voff, vlen, userdata);
+    comma = 1;
+  }
+  len += fn("}", 1, userdata);
+  return len;
+}
+#endif  // MJSON_ENABLE_MERGE
+
+#if MJSON_ENABLE_PRETTY
+struct prettydata {
+  int level;
+  int len;
+  int prev;
+  const char *pad;
+  int padlen;
+  mjson_print_fn_t fn;
+  void *userdata;
+};
+
+static int ATTR pretty_cb(int ev, const char *s, int off, int len, void *ud) {
+  struct prettydata *d = (struct prettydata *) ud;
+  int i;
+  switch (ev) {
+    case '{':
+    case '[':
+      d->level++;
+      d->len += d->fn(s + off, len, d->userdata);
+      break;
+    case '}':
+    case ']':
+      d->level--;
+      if (d->prev != '[' && d->prev != '{' && d->padlen > 0) {
+        d->len += d->fn("\n", 1, d->userdata);
+        for (i = 0; i < d->level; i++)
+          d->len += d->fn(d->pad, d->padlen, d->userdata);
+      }
+      d->len += d->fn(s + off, len, d->userdata);
+      break;
+    case ',':
+      d->len += d->fn(s + off, len, d->userdata);
+      if (d->padlen > 0) {
+        d->len += d->fn("\n", 1, d->userdata);
+        for (i = 0; i < d->level; i++)
+          d->len += d->fn(d->pad, d->padlen, d->userdata);
+      }
+      break;
+    case ':':
+      d->len += d->fn(s + off, len, d->userdata);
+      if (d->padlen > 0) d->len += d->fn(" ", 1, d->userdata);
+      break;
+    case MJSON_TOK_KEY:
+      if (d->prev == '{' && d->padlen > 0) {
+        d->len += d->fn("\n", 1, d->userdata);
+        for (i = 0; i < d->level; i++)
+          d->len += d->fn(d->pad, d->padlen, d->userdata);
+      }
+      d->len += d->fn(s + off, len, d->userdata);
+      break;
+    default:
+      if (d->prev == '[' && d->padlen > 0) {
+        d->len += d->fn("\n", 1, d->userdata);
+        for (i = 0; i < d->level; i++)
+          d->len += d->fn(d->pad, d->padlen, d->userdata);
+      }
+      d->len += d->fn(s + off, len, d->userdata);
+      break;
+  }
+  d->prev = ev;
+  return 0;
+}
+
+int ATTR mjson_pretty(const char *s, int n, const char *pad,
+                      mjson_print_fn_t fn, void *userdata) {
+  struct prettydata d = {0, 0, 0, pad, strlen(pad), fn, userdata};
+  if (mjson(s, n, pretty_cb, &d) < 0) return -1;
+  return d.len;
+}
+#endif  // MJSON_ENABLE_PRETTY
+
 #if MJSON_ENABLE_RPC
 struct jsonrpc_ctx jsonrpc_default_context;
 struct jsonrpc_userdata {
@@ -759,20 +1020,25 @@ struct jsonrpc_userdata {
   void *fndata;
 };
 
+static int mjson_globmatch(const char *s1, int n1, const char *s2, int n2) {
+  int i = 0, j = 0, ni = 0, nj = 0;
+  while (i < n1 || j < n2) {
+    if (i < n1 && j < n2 && (s1[i] == '?' || s2[j] == s1[i])) {
+      i++, j++;
+    } else if (i < n1 && (s1[i] == '*' || s1[i] == '#')) {
+      ni = i, nj = j + 1, i++;
+    } else if (nj > 0 && nj <= n2 && (s1[i - 1] == '#' || s2[j] != '/')) {
+      i = ni, j = nj;
+    } else {
+      return 0;
+    }
+  }
+  return 1;
+}
+
 static int ATTR jsonrpc_printer(const char *buf, int len, void *userdata) {
   struct jsonrpc_userdata *u = (struct jsonrpc_userdata *) userdata;
   return u->fn(buf, len, u->fndata);
-}
-
-int ATTR jsonrpc_call(mjson_print_fn_t fn, void *fndata, const char *fmt, ...) {
-  va_list ap;
-  int len;
-  char ch = '\n';
-  va_start(ap, fmt);
-  len = mjson_vprintf(fn, fndata, fmt, ap);
-  va_end(ap);
-  fn(&ch, 1, fndata);
-  return len;
 }
 
 void ATTR jsonrpc_return_errorv(struct jsonrpc_request *r, int code,
@@ -817,14 +1083,13 @@ void ATTR jsonrpc_return_success(struct jsonrpc_request *r,
   va_end(ap);
 }
 
-void ATTR jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, char *req, int req_sz,
-                              mjson_print_fn_t fn, void *fndata) {
-  const char *result = NULL;
-  char method[50];
-  int method_sz = 0, result_sz = 0;
+void ATTR jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, const char *req,
+                              int req_sz, mjson_print_fn_t fn, void *fndata) {
+  const char *result = NULL, *error = NULL;
+  int result_sz = 0, error_sz = 0;
   struct jsonrpc_method *m = NULL;
   struct jsonrpc_userdata d;
-  struct jsonrpc_request r = {NULL, 0, NULL, 0, &jsonrpc_printer, NULL, NULL};
+  struct jsonrpc_request r = {0, 0, 0, 0, 0, 0, &jsonrpc_printer, NULL, NULL};
 
   d.fn = fn;
   d.fndata = fndata;
@@ -832,15 +1097,16 @@ void ATTR jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, char *req, int req_sz,
 
   // Is is a response frame?
   mjson_find(req, req_sz, "$.result", &result, &result_sz);
-  if (result != NULL && result_sz > 0) {
+  if (result == NULL) mjson_find(req, req_sz, "$.error", &error, &error_sz);
+  if (result_sz > 0 || error_sz > 0) {
     if (ctx->response_cb != NULL) ctx->response_cb(req, req_sz, ctx->userdata);
     return;
   }
 
   // Method must exist and must be a string
-  if ((method_sz = mjson_get_string(req, req_sz, "$.method", method,
-                                    sizeof(method))) <= 0) {
-    jsonrpc_call(fn, fndata, "{\"error\":{\"code\":-32700,\"message\":%.*Q}}",
+  if (mjson_find(req, req_sz, "$.method", &r.method, &r.method_len) !=
+      MJSON_TOK_STRING) {
+    mjson_printf(fn, fndata, "{\"error\":{\"code\":-32700,\"message\":%.*Q}}\n",
                  req_sz, req);
     ctx->in_len = 0;
     return;
@@ -851,7 +1117,8 @@ void ATTR jsonrpc_ctx_process(struct jsonrpc_ctx *ctx, char *req, int req_sz,
   mjson_find(req, req_sz, "$.params", &r.params, &r.params_len);
 
   for (m = ctx->methods; m != NULL; m = m->next) {
-    if (m->method_sz == method_sz && !memcmp(m->method, method, method_sz)) {
+    if (mjson_globmatch(m->method, m->method_sz, r.method + 1,
+                        r.method_len - 2) > 0) {
       if (r.params == NULL) r.params = "";
       r.userdata = m->cbdata;
       m->cb(&r);
@@ -884,8 +1151,7 @@ void ATTR jsonrpc_ctx_init(struct jsonrpc_ctx *ctx,
                            void *userdata) {
   ctx->response_cb = response_cb;
   ctx->userdata = userdata;
-
-  jsonrpc_ctx_export(ctx, "RPC.List", rpclist, ctx);
+  jsonrpc_ctx_export(ctx, MJSON_RPC_LIST_NAME, rpclist, ctx);
 }
 
 void ATTR jsonrpc_ctx_process_byte(struct jsonrpc_ctx *ctx, unsigned char ch,

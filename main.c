@@ -2,6 +2,12 @@
 // All rights reserved
 
 #include "stm32f1.h"
+
+#ifndef RPC
+#define RPC 1
+#endif
+
+#if RPC
 #include "mjson.h"
 
 static int uart_write(const char *ptr, int size, void *userdata) {
@@ -13,9 +19,11 @@ static int uart_write(const char *ptr, int size, void *userdata) {
   }
   return size;
 }
+#endif
 
 static int blink_period = 150000;
 
+#if RPC
 static void set_cycles(struct jsonrpc_request *r) {
   double dv;
   if (mjson_get_number(r->params, r->params_len, "$.period", &dv)) {
@@ -25,6 +33,7 @@ static void set_cycles(struct jsonrpc_request *r) {
     jsonrpc_return_error(r, JSONRPC_ERROR_BAD_PARAMS, "Expect period", NULL);
   }
 }
+#endif
 
 int main(void) {
   INIT_MEMORY;
@@ -39,14 +48,18 @@ int main(void) {
   UART1->BRR = 0x45;                       // Set baud rate, TRM 27.3.4
   UART1->CR1 = BIT(13) | BIT(2) | BIT(3);  // Enable USART1
 
+#if RPC
   jsonrpc_init(NULL, NULL);                       // Init JSON-RPC lib
   jsonrpc_export("SetCycles", set_cycles, NULL);  // Export custom function
+#endif
 
   volatile int count = 0, led_on = 0;
   for (;;) {
+#if RPC
     if (UART_HAS_DATA(UART1)) {
       jsonrpc_process_byte(UART_READ(UART1), uart_write, UART1);
     }
+#endif
     if (++count < blink_period) continue;
     count = 0;
     led_on = !led_on;

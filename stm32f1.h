@@ -4,6 +4,7 @@
 // TRM: https://www.st.com/resource/en/reference_manual/cd00171190.pdf
 
 #include <stdint.h>
+#include <string.h>
 
 #define LED_PIN 13  // PC13
 #define TX_PIN 9    // PA9

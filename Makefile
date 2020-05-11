@@ -1,6 +1,6 @@
 TARGET  = bluepill
 ARCH    = arm-none-eabi
-CFLAGS  = -W -Wall -g -Os -mcpu=cortex-m3 -mthumb -mabi=aapcs -mfloat-abi=soft
+CFLAGS  = -W -Wall -g -Os -mcpu=cortex-m3 -mthumb -mabi=aapcs -mfloat-abi=soft $(CFLAGS_EXTRA)
 LDFLAGS = -Wl,--gc-sections -march=armv7-m -mabi=aapcs  -nostartfiles -nostdlib -lc -lnosys -lgcc
 AFLAGS  = --warn --fatal-warnings -mcpu=cortex-m3
 OBJS    = obj/bootstrap.o obj/main.o
