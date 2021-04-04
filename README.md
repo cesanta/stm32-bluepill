@@ -1,17 +1,19 @@
 # STM32 BluePill controlled by https://vcon.io
 
 This is a baremetal firmware code for a STM32F103C8T6 "BluePill"
-development board. This firmware blinks an LED, and runs a JSON-RPC
-client/server over the UART. With this setup, this board can be wired to the
-https://vcon.io, which gives the following functionality:
+development board. This firmware blinks an LED, and lets user change blink
+interval via UART - by entering numbers from 0 to 9.
 
-- Allows to remotely flash the BluePill board
-- Allows to call BluePill's functions over the network
-- Allows BluePill to call VCON functions like MQTT publish/subcribe, create/edit/delete/download files, etc
+This is a demonstration firmware for the VCON framework which implements
+OTA firmware updates and remote control. See https://vcon.io/docs for details.
 
-Basically, VCON grants remote control capabilities without
-writing a single line of networking code, and grants Over-the-Air firmware
-update without writing a single line of code.
+## Build
 
-Follow https://vcon.io for detailed instrustions.
+Install gcc-arm-none-eabi cross compiler on your system, then run:
 
+```sh
+make
+```
+
+That produces `bluepill.hex` file, suitable for remote firmware update
+via VCON.
