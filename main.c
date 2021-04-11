@@ -3,7 +3,7 @@
 
 #include "stm32f1.h"
 
-static int blink_period = 150000;
+static int blink_period = 450000;
 
 static void setup(void) {
   INIT_MEMORY;
@@ -31,7 +31,7 @@ int main(void) {
   for (;;) {
     if (UART_HAS_DATA(UART1)) {
       int ch = UART_READ(UART1);
-      if (ch >= '0' && ch <= '9') blink_period = (ch - '0' + 1) * 50000;
+      if (ch >= '0' && ch <= '9') blink_period = (ch - '0' + 1) * 150000;
     }
     if (++count > blink_period) {
       count = 0;
